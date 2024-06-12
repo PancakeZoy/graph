@@ -4,6 +4,7 @@ from node2vec import Node2Vec
 from umap import UMAP
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
+from sklearn.decomposition import PCA
 from utils import label_to_communities
 import matplotlib.pyplot as plt
 
@@ -14,14 +15,12 @@ class GraphEmbd():
         self.G = graph
         self.nodes = np.array(graph.nodes)
         self.n_nodes = len(self.nodes)
-        self.node_attr = {'True': np.fromiter(nx.get_node_attributes(graph, 'label').values(), dtype=int)}
+        self.node_attr = {}
         self.node2vec_model = None
         self.clust_model = None
-        self.embedding = None
-        self.umap_coor = None
+        self.reduction = {}
         self.metric = {}
         self.trace_K = {}
-        self.modularity('True')
     
     def embd_init(self, 
                    dimensions = 128,
@@ -48,7 +47,7 @@ class GraphEmbd():
         - workers: 
             Number of workers for parallel execution (default: 1).
         - p: 
-            Return parameter (default: 1).
+            Return parameter (default: 0.8).
         - q: 
             In-out parameter (default: 1).
         - seed: 
@@ -76,6 +75,7 @@ class GraphEmbd():
             window=10,
             min_count=1,
             batch_words=4,
+            reduction_name = 'node2vec',
             **kwargs):
         """
         Fit the Node2Vec model by running Word2Vec algorithm.
@@ -90,10 +90,12 @@ class GraphEmbd():
             Target size (in words) for batches of examples passed to worker threads 
             (and thus cython routines). Larger batches will be passed if individual texts 
             are longer than 10,000 words, but the standard cython code truncates to that maximum.
+        - reduction_name:
+            Name of the reduction key used to store embeddings (default: 'node2vec').
             
         Attributes
         ----------
-        - self.embedding: ndarray of shape (n_nodes, n_dimensions)
+        - self.reduction[reduction_name]: ndarray of shape (n_nodes, n_dimensions)
             The node embedding matrix, row re-ordered to match the node order of self.G 
         """
         self.node2vec_model = self.node2vec_model.fit(
@@ -106,9 +108,43 @@ class GraphEmbd():
         embd_nodes_order = np.array(self.node2vec_model.wv.index_to_key).astype(int)
         order_index = {node: i for i, node in enumerate(embd_nodes_order)}
         node_embeddings = np.array([node_embeddings[order_index[node]] for node in self.nodes])
-        self.embedding = node_embeddings
+        self.reduction[reduction_name] = node_embeddings
         
+    def pca(self,
+            reduction = 'node2vec',
+            reduction_name = 'PCA',
+            n_components = 10,
+            random_state = 42,
+            **kwargs):
+        """
+        Perform PCA on the node embeddings for dimensionality reduction.
+        
+        Parameters
+        ----------
+        - reduction: str, optional, default='node2vec'
+            The key in the reduction dictionary from which to get the embeddings for PCA.
+        - reduction_name: str, optional, default='PCA'
+            The key in the reduction dictionary under which to store the PCA embeddings.
+        - n_components: int, optional, default=10
+            The number of components to keep.
+        - random_state: int, optional, default=42
+            The seed for random number generation.
+        - kwargs: dict, optional
+            Additional keyword arguments for PCA.
+        
+        Attributes
+        ----------
+        - self.reduction[reduction_name]: ndarray of shape (n_nodes, n_components)
+            The PCA embeddings
+        """
+        reducer = PCA(n_components=n_components, random_state=random_state, **kwargs)
+        pcs = reducer.fit_transform(self.reduction[reduction])
+        self.reduction[reduction_name] = pcs
+        
+    
     def umap(self, 
+             reduction = 'node2vec',
+             reduction_name = 'UMAP',
              n_components = 2,
              metric = 'cosine',
              random_state = 3,
@@ -118,43 +154,51 @@ class GraphEmbd():
         
         Parameters
         ----------
+        - reduction: str, optional, default='node2vec'
+            The key in the reduction dictionary from which to get the embeddings for UMAP.
+        - reduction_name: str, optional, default='UMAP'
+            The key in the reduction dictionary under which to store the UMAP embeddings.
         - n_components: int, optional, default=2
             The number of dimensions to reduce the data to. Typically, for visualization purposes, 
             this is set to 2.
-        
         - metric: str or callable, optional, default='cosine'
             The distance metric to use for computing distances between pairs of samples. 
             It can be any metric supported by `scipy.spatial.distance.pdist` or a user-defined function.
-        
         - random_state: int, RandomState instance or None, optional, default=3
             The seed of the pseudo-random number generator to use for initializing the optimization.
             If an integer is given, it fixes the seed. If None, the random number generator is the 
             RandomState instance used by `np.random`.
-        
-        - **kwargs: dict, optional
-            Additional keyword arguments to pass to the UMAP constructor. These can include parameters
-            such as `n_neighbors`, `min_dist`, `spread`, `set_op_mix_ratio`, `local_connectivity`, etc.
+        - kwargs: dict, optional
+            Additional keyword arguments to pass to the UMAP constructor.
         
         Attributes
         ----------
-        - self.umap_coor: ndarray of shape (n_nodes, n_components)
-            The transformed data after applying UMAP.
+        - self.reduction[reduction_name]: ndarray of shape (n_nodes, n_components)
+            The UMAP embeddings
         """
-    
+        
         reducer = UMAP(n_components=n_components, metric=metric, random_state=random_state, **kwargs)
-        umap_coor = reducer.fit_transform(self.embedding)
-        self.umap_coor = umap_coor
+        valid_keys = list(self.reduction.keys())
+        if reduction_name in valid_keys:
+            valid_keys.remove(reduction_name)
+        if reduction not in valid_keys:
+            raise ValueError(f"Must give a reduction name among {valid_keys}")
+        umap_coor = reducer.fit_transform(self.reduction[reduction])
+        self.reduction[reduction_name] = umap_coor
         
     def kmeans(self,
+               reduction='PCA',
                n_clusters=4, 
                random_state=42, 
                n_init=15,
                **kwargs):
         """
-        Perform KMeans clustering on the UMAP coordinates.
+        Perform KMeans clustering on the reduced coordinates.
     
         Parameters
         ----------
+        - reduction: str, optional, default='PCA'
+            The key in the reduction dictionary from which to get the embeddings for KMeans clustering.
         - n_clusters: int, optional, default=4
             The number of clusters to form.
         - random_state: int, optional, default=42
@@ -173,17 +217,24 @@ class GraphEmbd():
                         random_state=random_state, 
                         n_init=n_init, 
                         **kwargs)
-        pred_label = model.fit_predict(self.umap_coor)
+        if reduction not in self.reduction.keys():
+            raise ValueError(f"Must give a reduction name among {list(self.reduction.keys())}")
+        pred_label = model.fit_predict(self.reduction[reduction])
         self.clust_model = model
         self.node_attr['KMeans'] = pred_label
         self.modularity('KMeans')
+
         
-    def k_selection(self, k_min_max=None):
+    def k_selection(self, reduction = 'PCA', method = 'KMeans', k_min_max=None):
         """
         Perform selection of the optimal number of clusters (k) based on various metrics.
     
         Parameters
         ----------
+        - reduction: str, optional, default='PCA'
+            The key in the reduction dictionary from which to get the embeddings for clustering.
+        - method: str, optional, default='KMeans'
+            The clustering method to use.
         - k_min_max: tuple of int, optional
             A tuple (k_min, k_max) specifying the range of k values to explore.
             If None, defaults to a range between max(2, n_nodes/10) and min(n_nodes/2, n_nodes).
@@ -201,10 +252,10 @@ class GraphEmbd():
     
         Notes
         -----
-        This method uses KMeans clustering to compute the cluster labels for a range of k values. 
+        This method performs the clustering on different number of clusters k.
         For each k, it calculates the modularity, within-cluster sum of squares (WSS), and silhouette score, 
         and stores these metrics in the `trace_K` attribute.
-        """        
+        """      
         if k_min_max is None:            
             k_min = max(2, int(self.n_nodes/10))
             k_max = min(int(self.n_nodes/2), self.n_nodes)
@@ -215,15 +266,37 @@ class GraphEmbd():
         self.k_grid = k_grid
         mod = np.array([]); wss = np.array([]); sil = np.array([]);
         for k in k_grid:
-            self.kmeans(n_clusters=k)
-            pred_label = self.node_attr['KMeans']
+            self.kmeans(reduction=reduction, n_clusters=k)
+            pred_label = self.node_attr[method]
             mod = np.append(mod, nx.community.modularity(self.G, label_to_communities(pred_label, self.nodes)))
             wss = np.append(wss, self.clust_model.inertia_)
-            sil = np.append(sil, silhouette_score(self.umap_coor, pred_label))
+            sil = np.append(sil, silhouette_score(self.reduction[reduction], pred_label))
         self.trace_K = {'modularity': mod,
                         'wss': wss,
                         'silhouette': sil}
-            
+
+    def louvian(self, seed=123, **kwargs):
+        """
+        Perform Louvain community detection on the graph.
+    
+        Parameters
+        ----------
+        - seed: int, optional, default=123
+            Random seed for reproducibility.
+        - kwargs: dict, optional
+            Additional keyword arguments for the Louvain method.
+    
+        Attributes
+        ----------
+        - self.node_attr['Louvian']: ndarray of shape (n_nodes,)
+            Community labels for each node in the graph.
+        """
+        louv_comm = nx.community.louvain_communities(self.G, seed=seed)
+        louv_label = np.array([None] * len(self.G.nodes))
+        for label, nodes in enumerate(louv_comm):
+            louv_label[list(nodes)] = label
+        self.node_attr['Louvian'] = louv_label[self.nodes].astype(int)
+        self.modularity('Louvian')
     
     def modularity(self, method):
         """
@@ -252,34 +325,10 @@ class GraphEmbd():
         self.metric['modularity'][method] = mod_value
     
     
-    def louvian(self, seed=123, **kwargs):
-        """
-        Perform Louvain community detection on the graph.
-    
-        Parameters
-        ----------
-        - seed: int, optional, default=123
-            Random seed for reproducibility.
-        - kwargs: dict, optional
-            Additional keyword arguments for the Louvain method.
-    
-        Attributes
-        ----------
-        - self.node_attr['Louvian']: ndarray of shape (n_nodes,)
-            Community labels for each node in the graph.
-        """        
-        louv_comm = nx.community.louvain_communities(self.G, seed=seed)
-        louv_label = np.ones(len(self.G.nodes))
-        for label, nodes in enumerate(louv_comm):
-            louv_label[list(nodes)] = label
-        self.node_attr['Louvian'] = louv_label[self.nodes].astype(int)
-        self.modularity('Louvian')
-    
-    
     def draw_graph(self, method=None, seed=86, title=None, ax=None, **kwargs):
         """
         Draw the graph with nodes colored by the given method.
-
+        
         Parameters
         ----------
         - method: str, optional
@@ -300,7 +349,7 @@ class GraphEmbd():
                 raise ValueError(f"Must give a method name among {list(self.node_attr.keys())}")
             node_color = self.node_attr[method]
         else:
-            node_color = 'blue'  # Default color if no method is provided
+            node_color = '#1f78b4'  # Default color if no method is provided
 
         if ax is None:
             fig, ax = plt.subplots()
@@ -320,17 +369,19 @@ class GraphEmbd():
             plt.show()
 
             
-    def plot_embd_umap(self, method=None, ax=None, **kwargs):
+    def plot_embd(self, reduction, with_labels=True, method=None, ax=None, **kwargs):
         """
-        Plot UMAP embedding with flexibility for customization.
+        Plot reduced embeddings with flexibility for customization.
 
         Parameters
         ----------
-        - method: 
+        - reduction: str
+            The key in the reduction dictionary from which to get the embeddings for plotting.
+        - method: str, optional
             Method name for coloring the points.
-        - ax: 
+        - ax: matplotlib.axes.Axes, optional
             Matplotlib axes object to plot on. If None, create a new plot.
-        - kwargs:
+        - kwargs: dict, optional
             Additional keyword arguments for customization (e.g., axes labels, savefig).
         """
         if method is not None:
@@ -340,9 +391,12 @@ class GraphEmbd():
         else:
             colors = None
 
+        if reduction not in self.reduction.keys():
+            raise ValueError(f"Must give a reduction name among {list(self.reduction.keys())}")
+
         # Extract specific keys from kwargs
-        xlabel = kwargs.pop('xlabel', 'UMAP 1')
-        ylabel = kwargs.pop('ylabel', 'UMAP 2')
+        xlabel = kwargs.pop('xlabel', f'{reduction} 1')
+        ylabel = kwargs.pop('ylabel', f'{reduction} 2')
         title = kwargs.pop('title', None)
         savefig = kwargs.pop('savefig', None)
             
@@ -354,12 +408,13 @@ class GraphEmbd():
             show_plot = False
     
         # Scatter plot
-        ax.scatter(self.umap_coor[:, 0], self.umap_coor[:, 1], c=colors, **kwargs)
+        ax.scatter(self.reduction[reduction][:, 0], self.reduction[reduction][:, 1], c=colors, **kwargs)
     
         # Annotate nodes
-        for i in range(len(self.nodes)):
-            ax.text(self.umap_coor[i, 0], self.umap_coor[i, 1], s=str(self.nodes[i]), 
-                    horizontalalignment='center', verticalalignment='center')
+        if with_labels:
+            for i in range(len(self.nodes)):
+                ax.text(self.reduction[reduction][i, 0], self.reduction[reduction][i, 1], s=str(self.nodes[i]), 
+                        horizontalalignment='center', verticalalignment='center')
     
         # Customize axes if provided
         if xlabel:
@@ -393,10 +448,8 @@ class GraphEmbd():
     
         Raises
         ------
-        - ValueError: If self.trace_K is not defined or the specified score is not found.
+        - ValueError: If the specified score is not found.
         """
-        if not hasattr(self, 'trace_K'):
-            raise ValueError("self.trace_K is not defined.")
         if score not in self.trace_K:
             raise ValueError(f"The specified score '{score}' is not found in self.trace_K. Available scores are: {list(self.trace_K.keys())}")
     
