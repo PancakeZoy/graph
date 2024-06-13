@@ -12,7 +12,7 @@ nx.set_node_attributes(G, node_attrs, name='label')
 
 # Initialize the node2vec model
 model = GraphEmbd(G)
-model.node_attr['Truth'] = np.fromiter(nx.get_node_attributes(G, 'label').values(), dtype=int)
+model.node_label['Truth'] = np.fromiter(nx.get_node_attributes(G, 'label').values(), dtype=int)
 model.modularity('Truth')
 model.draw_graph(with_labels=True, method='Truth', font_color='red')
 
@@ -29,14 +29,13 @@ model.umap(n_jobs=1, reduction='PCA')
 model.plot_embd(reduction='UMAP', method='Truth', title='UMAP of node embedding (True labels)')
 
 # Perform model selection to choose the number of clusters K
-model.k_selection((2,15))
+model.hyper_tune(grid=range(2,15), method = 'KMeans')
 
 # Plot out the score(K)
-# Here we present three scores: modularity, within-cluster sum of squared (wss) errors, and silhouette score
-fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 6))
-model.plot_trace_K('modularity', ax=ax1, c='red')
-model.plot_trace_K('wss', ax=ax2)
-model.plot_trace_K('silhouette', ax=ax3)
+# Here we present two scores: modularity  and silhouette score
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+model.plot_trace(method='KMeans', score='modularity', ax=ax1, c='red')
+model.plot_trace(method='KMeans', score='silhouette', ax=ax2)
 plt.show()
 
 # Therefore we select K = 4
@@ -50,7 +49,7 @@ plt.show()
 model.louvian(seed=3)
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
 model.draw_graph(with_labels=True, method='Louvian', font_color='red', ax=ax1)
-model.plot_embd_umap(method='Louvian', title='UMAP of node embedding (Louvian labels)', ax=ax2)
+model.plot_embd(reduction='UMAP', method='Louvian', title='UMAP of node embedding (Louvian labels)', ax=ax2)
 plt.show()
 
 # Let's compare them all together, will modurality calculated.
