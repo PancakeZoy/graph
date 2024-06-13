@@ -3,6 +3,7 @@ import networkx as nx
 from node2vec import Node2Vec
 from umap import UMAP
 from sklearn.cluster import KMeans
+from sklearn.cluster import HDBSCAN
 from sklearn.metrics import silhouette_score
 from sklearn.decomposition import PCA
 from utils import label_to_communities
@@ -15,12 +16,14 @@ class GraphEmbd():
         self.G = graph
         self.nodes = np.array(graph.nodes)
         self.n_nodes = len(self.nodes)
-        self.node_attr = {}
+        self.node_label = {}
         self.node2vec_model = None
         self.clust_model = None
         self.reduction = {}
         self.metric = {}
-        self.trace_K = {}
+        self.trace = {}
+        self.n_trigs = sum(nx.triangles(graph).values())
+        self.grid = {}
     
     def embd_init(self, 
                    dimensions = 128,
@@ -210,7 +213,7 @@ class GraphEmbd():
     
         Attributes
         ----------
-        - self.node_attr['KMeans']: ndarray of shape (n_nodes,)
+        - self.node_label['KMeans']: ndarray of shape (n_nodes,)
             Cluster labels for each point in the dataset.
         """
         model = KMeans(n_clusters=n_clusters, 
@@ -221,59 +224,8 @@ class GraphEmbd():
             raise ValueError(f"Must give a reduction name among {list(self.reduction.keys())}")
         pred_label = model.fit_predict(self.reduction[reduction])
         self.clust_model = model
-        self.node_attr['KMeans'] = pred_label
+        self.node_label['KMeans'] = pred_label
         self.modularity('KMeans')
-
-        
-    def k_selection(self, reduction = 'PCA', method = 'KMeans', k_min_max=None):
-        """
-        Perform selection of the optimal number of clusters (k) based on various metrics.
-    
-        Parameters
-        ----------
-        - reduction: str, optional, default='PCA'
-            The key in the reduction dictionary from which to get the embeddings for clustering.
-        - method: str, optional, default='KMeans'
-            The clustering method to use.
-        - k_min_max: tuple of int, optional
-            A tuple (k_min, k_max) specifying the range of k values to explore.
-            If None, defaults to a range between max(2, n_nodes/10) and min(n_nodes/2, n_nodes).
-    
-        Attributes
-        ----------
-        - self.trace_K: dict
-            A dictionary containing the following keys:
-            - 'modularity': ndarray
-                Modularity scores for each k value.
-            - 'wss': ndarray
-                Within-cluster sum of squares (inertia) for each k value.
-            - 'silhouette': ndarray
-                Silhouette scores for each k value.
-    
-        Notes
-        -----
-        This method performs the clustering on different number of clusters k.
-        For each k, it calculates the modularity, within-cluster sum of squares (WSS), and silhouette score, 
-        and stores these metrics in the `trace_K` attribute.
-        """      
-        if k_min_max is None:            
-            k_min = max(2, int(self.n_nodes/10))
-            k_max = min(int(self.n_nodes/2), self.n_nodes)
-        else:
-            k_min = k_min_max[0]
-            k_max = k_min_max[1]
-        k_grid = np.arange(k_min, k_max)
-        self.k_grid = k_grid
-        mod = np.array([]); wss = np.array([]); sil = np.array([]);
-        for k in k_grid:
-            self.kmeans(reduction=reduction, n_clusters=k)
-            pred_label = self.node_attr[method]
-            mod = np.append(mod, nx.community.modularity(self.G, label_to_communities(pred_label, self.nodes)))
-            wss = np.append(wss, self.clust_model.inertia_)
-            sil = np.append(sil, silhouette_score(self.reduction[reduction], pred_label))
-        self.trace_K = {'modularity': mod,
-                        'wss': wss,
-                        'silhouette': sil}
 
     def louvian(self, seed=123, **kwargs):
         """
@@ -288,15 +240,73 @@ class GraphEmbd():
     
         Attributes
         ----------
-        - self.node_attr['Louvian']: ndarray of shape (n_nodes,)
+        - self.node_label['Louvian']: ndarray of shape (n_nodes,)
             Community labels for each node in the graph.
         """
         louv_comm = nx.community.louvain_communities(self.G, seed=seed)
-        louv_label = np.array([None] * len(self.G.nodes))
-        for label, nodes in enumerate(louv_comm):
-            louv_label[list(nodes)] = label
-        self.node_attr['Louvian'] = louv_label[self.nodes].astype(int)
+        nodes_list = list(self.G.nodes)
+        node_to_cluster = {}
+        for cluster_id, cluster in enumerate(louv_comm):
+            for node in cluster:
+                node_to_cluster[node] = cluster_id
+        louv_label = np.array([node_to_cluster[node] for node in nodes_list]).astype(int)
+        self.node_label['Louvian'] = louv_label
         self.modularity('Louvian')
+        
+    def HDBSCAN(self,
+                reduction='PCA',
+                min_cluster_size=3,
+                max_cluster_size=10,
+                **kwargs):
+        if reduction not in self.reduction.keys():
+            raise ValueError(f"Must give a reduction name among {list(self.reduction.keys())}")
+        hdb = HDBSCAN(min_cluster_size=min_cluster_size,
+                      max_cluster_size=max_cluster_size)
+        hdb.fit(self.reduction[reduction])
+        self.node_label['HDBSCAN'] = hdb.labels_
+        self.modularity('HDBSCAN')
+        
+    def hyper_tune(self, grid, method = 'KMeans', reduction = 'PCA'):
+        """
+        Perform hyperparameter tuning to select the optimal clustering parameters based on various metrics.
+        
+        Parameters
+        ----------
+        - grid: array-like
+            A list or array specifying the range of k values (for KMeans) or min_cluster_size values (for HDBSCAN) to explore.
+        - method: str, optional, default='KMeans'
+            The clustering method to use. Options are 'KMeans' and 'HDBSCAN'.
+        - reduction: str, optional, default='PCA'
+            The key in the reduction dictionary from which to get the embeddings for clustering.
+        
+        Attributes
+        ----------
+        - self.trace: dict
+            A dictionary containing the following keys for each method:
+            - 'modularity': ndarray
+                Modularity scores for each value in the grid.
+            - 'silhouette': ndarray
+                Silhouette scores for each value in the grid.
+        
+        Notes
+        -----
+        This method performs clustering using either KMeans or HDBSCAN over a range of parameters specified in the grid.
+        For each parameter value, it calculates the modularity and silhouette scores and stores these metrics in the `trace` attribute.
+        """
+        mod = np.array([]); sil = np.array([]);
+        self.grid[method] = grid
+        for p in grid:
+            if method == 'KMeans':            
+                self.kmeans(reduction=reduction, n_clusters=p)
+            elif method == 'HDBSCAN':
+                self.HDBSCAN(reduction=reduction, min_cluster_size=p)
+            else:
+                raise ValueError("Invalid method. Please choose either 'KMeans' or 'HDBSCAN'.")
+            pred_label = self.node_label[method]
+            mod = np.append(mod, nx.community.modularity(self.G, label_to_communities(pred_label, self.nodes)))
+            sil = np.append(sil, silhouette_score(self.reduction[reduction], pred_label))
+        trace_method = {'modularity': mod, 'silhouette': sil}
+        self.trace[method] = trace_method
     
     def modularity(self, method):
         """
@@ -309,16 +319,16 @@ class GraphEmbd():
     
         Raises
         ------
-        - ValueError: If the method is not found in self.node_attr.
+        - ValueError: If the method is not found in self.node_label.
     
         Attributes
         ----------
         - self.metric['modularity'][method]: float
             The modularity score for the given method.
         """
-        if method not in self.node_attr.keys():
-            raise ValueError(f"Must give a method name among {list(self.node_attr.keys())}")
-        pred_comm = label_to_communities(self.node_attr[method], self.nodes)
+        if method not in self.node_label.keys():
+            raise ValueError(f"Must give a method name among {list(self.node_label.keys())}")
+        pred_comm = label_to_communities(self.node_label[method], self.nodes)
         mod_value = nx.community.modularity(self.G, pred_comm)
         if 'modularity' not in self.metric:
             self.metric['modularity'] = {}
@@ -345,9 +355,9 @@ class GraphEmbd():
         pos = nx.spring_layout(self.G, seed=seed)
         
         if method is not None:
-            if method not in self.node_attr.keys():
-                raise ValueError(f"Must give a method name among {list(self.node_attr.keys())}")
-            node_color = self.node_attr[method]
+            if method not in self.node_label.keys():
+                raise ValueError(f"Must give a method name among {list(self.node_label.keys())}")
+            node_color = self.node_label[method]
         else:
             node_color = '#1f78b4'  # Default color if no method is provided
 
@@ -385,9 +395,9 @@ class GraphEmbd():
             Additional keyword arguments for customization (e.g., axes labels, savefig).
         """
         if method is not None:
-            if method not in self.node_attr.keys():
-                raise ValueError(f"Must give a method name among {list(self.node_attr.keys())}")
-            colors = self.node_attr[method]
+            if method not in self.node_label.keys():
+                raise ValueError(f"Must give a method name among {list(self.node_label.keys())}")
+            colors = self.node_label[method]
         else:
             colors = None
 
@@ -433,14 +443,14 @@ class GraphEmbd():
             plt.show()
 
 
-    def plot_trace_K(self, score, ax=None, **kwargs):
+    def plot_trace(self, method, score, ax=None, **kwargs):
         """
-        Plot a specified score array in self.trace_K as a line scatter plot.
+        Plot a specified score array in self.trace as a line scatter plot.
     
         Parameters
         ----------
         - score: str
-            The key of the score array in self.trace_K to plot.
+            The key of the score array in self.trace to plot.
         - ax: matplotlib.axes.Axes, optional
             Matplotlib axes object to plot on. If None, create a new plot.
         - kwargs: dict, optional
@@ -450,11 +460,13 @@ class GraphEmbd():
         ------
         - ValueError: If the specified score is not found.
         """
-        if score not in self.trace_K:
-            raise ValueError(f"The specified score '{score}' is not found in self.trace_K. Available scores are: {list(self.trace_K.keys())}")
+        if method not in self.trace:
+            raise ValueError(f"The specified method '{method}' is not found in self.trace. Available methods are: {list(self.trace.keys())}")            
+        if score not in self.trace[method]:
+            raise ValueError(f"The specified score '{score}' is not found in self.trace[{method}] Available scores are: {list(self.trace[method].keys())}")
     
         # Extract specific keys from kwargs
-        xlabel = kwargs.pop('xlabel', 'Number of clusters K')
+        xlabel = kwargs.pop('xlabel', 'Grid')
         ylabel = kwargs.pop('ylabel', score.capitalize())
         title = kwargs.pop('title', f'{score.capitalize()} Scores for Different K Values')
         savefig = kwargs.pop('savefig', None)
@@ -467,8 +479,8 @@ class GraphEmbd():
             show_plot = False
     
         # Plot the specified score array
-        values = self.trace_K[score]
-        ax.plot(self.k_grid, values, marker='o', label=score, **kwargs)
+        values = self.trace[method][score]
+        ax.plot(self.grid[method], values, marker='o', label=score, **kwargs)
     
         # Customize the plot
         ax.set_xlabel(xlabel)
