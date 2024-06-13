@@ -6,7 +6,7 @@ from sklearn.cluster import KMeans
 from sklearn.cluster import HDBSCAN
 from sklearn.metrics import silhouette_score
 from sklearn.decomposition import PCA
-from utils import label_to_communities
+from utils import NodeLabel_to_communities
 import matplotlib.pyplot as plt
 
 class GraphEmbd():
@@ -116,7 +116,7 @@ class GraphEmbd():
     def pca(self,
             reduction = 'node2vec',
             reduction_name = 'PCA',
-            n_components = 10,
+            n_components = None,
             random_state = 42,
             **kwargs):
         """
@@ -140,6 +140,8 @@ class GraphEmbd():
         - self.reduction[reduction_name]: ndarray of shape (n_nodes, n_components)
             The PCA embeddings
         """
+        if n_components is None:
+            n_components = min(10, self.n_nodes)
         reducer = PCA(n_components=n_components, random_state=random_state, **kwargs)
         pcs = reducer.fit_transform(self.reduction[reduction])
         self.reduction[reduction_name] = pcs
@@ -261,7 +263,8 @@ class GraphEmbd():
         if reduction not in self.reduction.keys():
             raise ValueError(f"Must give a reduction name among {list(self.reduction.keys())}")
         hdb = HDBSCAN(min_cluster_size=min_cluster_size,
-                      max_cluster_size=max_cluster_size)
+                      max_cluster_size=max_cluster_size,
+                      **kwargs)
         hdb.fit(self.reduction[reduction])
         self.node_label['HDBSCAN'] = hdb.labels_
         self.modularity('HDBSCAN')
@@ -303,7 +306,7 @@ class GraphEmbd():
             else:
                 raise ValueError("Invalid method. Please choose either 'KMeans' or 'HDBSCAN'.")
             pred_label = self.node_label[method]
-            mod = np.append(mod, nx.community.modularity(self.G, label_to_communities(pred_label, self.nodes)))
+            mod = np.append(mod, nx.community.modularity(self.G, NodeLabel_to_communities(pred_label, self.nodes)))
             sil = np.append(sil, silhouette_score(self.reduction[reduction], pred_label))
         trace_method = {'modularity': mod, 'silhouette': sil}
         self.trace[method] = trace_method
@@ -328,7 +331,7 @@ class GraphEmbd():
         """
         if method not in self.node_label.keys():
             raise ValueError(f"Must give a method name among {list(self.node_label.keys())}")
-        pred_comm = label_to_communities(self.node_label[method], self.nodes)
+        pred_comm = NodeLabel_to_communities(self.node_label[method], self.nodes)
         mod_value = nx.community.modularity(self.G, pred_comm)
         if 'modularity' not in self.metric:
             self.metric['modularity'] = {}
@@ -379,7 +382,7 @@ class GraphEmbd():
             plt.show()
 
             
-    def plot_embd(self, reduction, with_labels=True, method=None, ax=None, **kwargs):
+    def plot_embd(self, reduction='UMAP', with_labels=True, method=None, ax=None, **kwargs):
         """
         Plot reduced embeddings with flexibility for customization.
 
