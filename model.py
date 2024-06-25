@@ -338,7 +338,7 @@ class GraphEmbd():
         self.metric['modularity'][method] = mod_value
     
     
-    def draw_graph(self, method=None, seed=86, title=None, ax=None, **kwargs):
+    def draw_graph(self, method=None, weight_key = 'weight', width = 1.0, seed=86, title=None, ax=None, **kwargs):
         """
         Draw the graph with nodes colored by the given method.
         
@@ -346,6 +346,10 @@ class GraphEmbd():
         ----------
         - method: str, optional
             Method name for coloring the nodes.
+        - weight_key: str, optional
+            The key of edge data that contains the weight. If None, all edges will have equal thickness on the plot.
+        - width: float, opition
+            The width of the smallest edge on the plot. Default as 1.0
         - seed: int, optional, default=86
             Random seed for the layout algorithm.
         - title: str, optional
@@ -371,7 +375,11 @@ class GraphEmbd():
             show_plot = False
 
         nx.draw(self.G, pos, ax=ax, node_color=node_color, **kwargs)
-
+        
+        if weight_key:
+            weights_list = np.array([data[weight_key] for n, e, data in self.G.edges(data=True)])
+            thickness = weights_list/min(weights_list) * width
+            nx.draw_networkx_edges(self.G, pos, ax=ax, width=thickness, edge_color=weights_list, edge_cmap=plt.cm.Blues)
         # Set title if provided
         if title is None and method is not None:
             title = f"Graph with {method} labels (Modularity {round(self.metric['modularity'][method], 2)})"
