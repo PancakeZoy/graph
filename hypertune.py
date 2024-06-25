@@ -82,7 +82,7 @@ for hh_index, hh_id in enumerate(HH_id_set):
             hp = hopkins(model.reduction['UMAP'], sampling_size=min(15, model.n_nodes))
             results_df.loc[comb, 'result'] = hp
             results_df_reset = results_df.reset_index()
-            results_df_reset.to_csv(f'tune/{hh_id}_{cc_index}.csv')
+        results_df_reset.to_csv(f'tune/{hh_id}_{cc_index}.csv')
 # results_df_reset = results_df.reset_index()
 # plt.figure(figsize=(10, 6))
 # sns.barplot(data=results_df_reset, x='q', y='result')
