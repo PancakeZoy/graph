@@ -8,6 +8,8 @@ from sklearn.metrics import silhouette_score
 from sklearn.decomposition import PCA
 from utils import NodeLabel_to_communities
 import matplotlib.pyplot as plt
+# import seaborn as sns
+import distinctipy
 
 class GraphEmbd():
     def __init__(
@@ -333,9 +335,10 @@ class GraphEmbd():
             raise ValueError(f"Must give a method name among {list(self.node_label.keys())}")
         pred_comm = NodeLabel_to_communities(self.node_label[method], self.nodes)
         mod_value = nx.community.modularity(self.G, pred_comm)
+        score = 1e-6 if max([len(comm) for comm in pred_comm])>10 else mod_value
         if 'modularity' not in self.metric:
             self.metric['modularity'] = {}
-        self.metric['modularity'][method] = mod_value
+        self.metric['modularity'][method] = score
     
     
     def draw_graph(self, method=None, weight_key = 'weight', width = 1.0, seed=86, title=None, ax=None, **kwargs):
@@ -364,7 +367,11 @@ class GraphEmbd():
         if method is not None:
             if method not in self.node_label.keys():
                 raise ValueError(f"Must give a method name among {list(self.node_label.keys())}")
-            node_color = self.node_label[method]
+            labels = self.node_label[method]
+            unique_labels = np.unique(labels)
+            # label_to_color = {label: color for label, color in zip(unique_labels, sns.color_palette("hsv", len(unique_labels)))}
+            label_to_color = {label: color for label, color in zip(unique_labels, distinctipy.get_colors(len(unique_labels)))}
+            node_color = [label_to_color[label] for label in labels]
         else:
             node_color = '#1f78b4'  # Default color if no method is provided
 
@@ -379,7 +386,7 @@ class GraphEmbd():
         if weight_key:
             weights_list = np.array([data[weight_key] for n, e, data in self.G.edges(data=True)])
             thickness = weights_list/min(weights_list) * width
-            nx.draw_networkx_edges(self.G, pos, ax=ax, width=thickness, edge_color=weights_list, edge_cmap=plt.cm.Blues)
+            nx.draw_networkx_edges(self.G, pos, ax=ax, width=thickness, edge_color=weights_list, edge_cmap=plt.cm.Reds)
         # Set title if provided
         if title is None and method is not None:
             title = f"Graph with {method} labels (Modularity {round(self.metric['modularity'][method], 2)})"
@@ -408,7 +415,11 @@ class GraphEmbd():
         if method is not None:
             if method not in self.node_label.keys():
                 raise ValueError(f"Must give a method name among {list(self.node_label.keys())}")
-            colors = self.node_label[method]
+            labels = self.node_label[method]
+            unique_labels = np.unique(labels)
+            # label_to_color = {label: color for label, color in zip(unique_labels, sns.color_palette("hsv", len(unique_labels)))}
+            label_to_color = {label: color for label, color in zip(unique_labels, distinctipy.get_colors(len(unique_labels)))}
+            colors = [label_to_color[label] for label in labels]
         else:
             colors = None
 
