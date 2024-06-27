@@ -1,41 +1,48 @@
 from model import GraphEmbd
 from utils import *
 import matplotlib.pyplot as plt
+import networkx as nx
 import pandas as pd
 import numpy as np
 
-edges = pd.read_csv('SampleGraph/ind_graph_edge_list_snapshot_20240314_sample01.csv', skiprows=3)
-edges.columns = ['source', 'target', 'weight', 'HouseHold_id']
-edges = edges.iloc[:-2,]
-edges['source'] = edges['source'].astype('int64')
-edges['target'] = edges['target'].astype('int64')
-edges['HouseHold_id'] = edges['HouseHold_id'].astype('int64')
+edges = pd.read_csv('SampleGraph_new/edge_list.csv')
+edges.columns = ['source', 'target', 'weight', 'hhcluster_id']
+edges.head()
 
-HHC_size = pd.DataFrame(edges.HouseHold_id.value_counts())
-HH_id = HHC_size.index[0]
+prod = pd.read_csv('SampleGraph_new/ind_CoreHH.csv')
+prod.head()
 
-edges_HH = edges[edges.HouseHold_id==HH_id]
-G = nx.from_pandas_edgelist(edges_HH, 'source', 'target', edge_attr='weight')
-nx.draw(G, node_size=5)
+HHC_size = pd.DataFrame(edges.hhcluster_id.value_counts())
+HHC_id = HHC_size.index[0]
 
-concom = sorted(list(nx.connected_components(G)), key=len, reverse=True)
-concom_size = np.array([len(cc) for cc in concom])
+edges_subset = edges[edges.hhcluster_id==HHC_id]
+prod_subset = prod[prod.hhcluster_id==HHC_id][['ind_id', 'core_hh_id']]
 
-sub_G = G.subgraph(concom[0])
-model = GraphEmbd(sub_G)
-model.draw_graph(with_labels=False, node_size=5)
+# Just in case if there are multiple connected components in the graph. They are supposed to be presented here tho.
+# concom = sorted(list(nx.connected_components(G)), key=len, reverse=True)
+# concom_size = np.array([len(cc) for cc in concom])
+# sub_G = G.subgraph(concom[0])
+G = nx.from_pandas_edgelist(edges_subset, 'source', 'target', edge_attr='weight')
+model = GraphEmbd(G)
+
+# Add Production labels to the model
+prod_dict = dict(prod_subset.values)
+prod_label = [prod_dict[node] for node in G.nodes]
+model.node_label['Production'] = prod_label
+model.modularity('Production')
+model.draw_graph(method='Production', with_labels=False, node_size=30)
 
 # Fit the node2vec model
 model.embd_init(seed=4)
-model.fit()        
+model.fit()
 
 # Run PCA on the node2vec embeddings
 model.pca()
-model.plot_embd(reduction='PCA', title='PCA plot of node embedding', with_labels=False)
+model.plot_embd(reduction='PCA', title='PCA plot of node embedding', with_labels=False, method='Production')
 
 #Perform UMAP on the node2vec embeddings, for visualization and K-Means clustering
 model.umap(n_jobs=1, reduction='PCA')
-model.plot_embd( title='UMAP of node embedding', with_labels=False)
+model.plot_embd( title='UMAP of node embedding', with_labels=False, method='Production')
 
 # Perform model selection to choose the number of clusters K
 model.hyper_tune(grid=range(4,15), method = 'KMeans')
@@ -44,7 +51,7 @@ model.plot_trace(method='KMeans', score='modularity', ax=ax1, c='red')
 model.plot_trace(method='KMeans', score='silhouette', ax=ax2)
 plt.show()
 
-# Therefore we select K = 7
+# Therefore we select the optimal K
 k_optim = model.grid['KMeans'][np.argmax(model.trace['KMeans']['modularity'])]
 model.kmeans(n_clusters=k_optim)
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
@@ -75,4 +82,3 @@ model.draw_graph(method='HDBSCAN', with_labels=False,
 model.draw_graph(method='Louvian', with_labels=False, 
                  title=f"Karate Graph with Louvian labels (Modularity {round(model.metric['modularity']['Louvian'],4)})", ax=ax3)
 plt.show()
-
