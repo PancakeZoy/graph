@@ -383,7 +383,11 @@ class GraphEmbd():
 
         nx.draw(self.G, pos, ax=ax, node_color=node_color, **kwargs)
         
-        if weight_key:
+        weight_miss = [weight_key not in data for node, data in self.G.nodes(data=True)]
+        
+        if any(weight_miss):
+            print(f'"{weight_key}" not found in the following nodes: {np.array(self.G.nodes)[np.where(weight_miss)[0]]}')
+        else:
             weights_list = np.array([data[weight_key] for n, e, data in self.G.edges(data=True)])
             thickness = weights_list/min(weights_list) * width
             nx.draw_networkx_edges(self.G, pos, ax=ax, width=thickness, edge_color=weights_list, edge_cmap=plt.cm.Reds)
