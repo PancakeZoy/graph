@@ -383,7 +383,7 @@ class GraphEmbd():
 
         nx.draw(self.G, pos, ax=ax, node_color=node_color, **kwargs)
         
-        weight_miss = [weight_key not in data for node, data in self.G.nodes(data=True)]
+        weight_miss = [weight_key not in data for u, v, data in self.G.edges(data=True)]
         
         if any(weight_miss):
             print(f'"{weight_key}" not found in the following nodes: {np.array(self.G.nodes)[np.where(weight_miss)[0]]}')
