@@ -1,6 +1,6 @@
 from model import GraphEmbd
 import networkx as nx
-from utils import *
+from utils import hopkins
 import itertools
 import pandas as pd
 import numpy as np

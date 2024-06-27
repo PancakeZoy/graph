@@ -313,7 +313,7 @@ class GraphEmbd():
         trace_method = {'modularity': mod, 'silhouette': sil}
         self.trace[method] = trace_method
     
-    def modularity(self, method):
+    def modularity(self, method, size_limit = True):
         """
         Calculate the modularity of the communities detected by the given method.
     
@@ -335,7 +335,10 @@ class GraphEmbd():
             raise ValueError(f"Must give a method name among {list(self.node_label.keys())}")
         pred_comm = NodeLabel_to_communities(self.node_label[method], self.nodes)
         mod_value = nx.community.modularity(self.G, pred_comm)
-        score = 1e-6 if max([len(comm) for comm in pred_comm])>10 else mod_value
+        
+        max_size = max([len(comm) for comm in pred_comm])
+        score = 1e-6 if size_limit and max_size > 10 else mod_value
+
         if 'modularity' not in self.metric:
             self.metric['modularity'] = {}
         self.metric['modularity'][method] = score
@@ -385,9 +388,9 @@ class GraphEmbd():
         
         weight_miss = [weight_key not in data for u, v, data in self.G.edges(data=True)]
         
-        if any(weight_miss):
-            print(f'"{weight_key}" not found in the following nodes: {np.array(self.G.nodes)[np.where(weight_miss)[0]]}')
-        else:
+        if not any(weight_miss):
+            # print(f'"{weight_key}" not found in the following edges: \n {np.array(self.G.edges)[np.where(weight_miss)[0]]}')
+        # else:
             weights_list = np.array([data[weight_key] for n, e, data in self.G.edges(data=True)])
             thickness = weights_list/min(weights_list) * width
             nx.draw_networkx_edges(self.G, pos, ax=ax, width=thickness, edge_color=weights_list, edge_cmap=plt.cm.Reds)

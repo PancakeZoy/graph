@@ -13,7 +13,7 @@ nx.set_node_attributes(G, node_attrs, name='label')
 # Initialize the node2vec model
 model = GraphEmbd(G)
 model.node_label['Truth'] = np.fromiter(nx.get_node_attributes(G, 'label').values(), dtype=int)
-model.modularity('Truth')
+model.modularity('Truth', size_limit=False)
 model.draw_graph(with_labels=True, method='Truth', font_color='red')
 
 # Fit the node2vec model
@@ -40,6 +40,7 @@ plt.show()
 
 # Therefore we select K = 4
 model.kmeans(n_clusters=4)
+model.modularity('KMeans', size_limit=False)
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
 model.draw_graph(method='KMeans', font_color='red', with_labels=True, ax=ax1)
 model.plot_embd(method='KMeans', title='UMAP of node embedding (KMeans labels)', ax=ax2)
@@ -54,6 +55,7 @@ plt.show()
 
 # HDBSCAN Clustering
 model.HDBSCAN(min_cluster_size=3)
+model.modularity('HDBSCAN', size_limit=False)
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
 model.draw_graph(method='HDBSCAN', font_color='red', with_labels=True, ax=ax1)
 model.plot_embd(method='HDBSCAN', title='UMAP of node embedding (HDBSCAN labels)', ax=ax2)
@@ -61,6 +63,7 @@ plt.show()
 
 # Now we run Louvian's method with default settings on the graph data, and plot the result out colored by the corresponding cluster labels
 model.louvian(seed=3)
+model.modularity('Louvian', size_limit=False)
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
 model.draw_graph(with_labels=True, method='Louvian', font_color='red', ax=ax1)
 model.plot_embd(method='Louvian', title='UMAP of node embedding (Louvian labels)', ax=ax2)
