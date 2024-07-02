@@ -1,6 +1,6 @@
-from model import GraphEmbd
+from GraphEmbd.model import GraphEmbd
+from GraphEmbd.utils import hopkins
 import networkx as nx
-from utils import hopkins
 import itertools
 import pandas as pd
 import numpy as np
@@ -8,10 +8,10 @@ import random
 from tqdm import tqdm
 from sklearn.metrics.cluster import adjusted_rand_score
 
-prod = pd.read_csv('SampleGraph/ind_CoreHH.csv')
+prod = pd.read_csv('Data/ind_CoreHH.csv')
 prod.head()
 
-edges = pd.read_csv('SampleGraph/edge_list.csv')
+edges = pd.read_csv('Data/edge_list.csv')
 edges.columns = ['source', 'target', 'weight', 'hhcluster_id']
 edges.head()
 

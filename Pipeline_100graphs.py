@@ -1,6 +1,6 @@
-from model import GraphEmbd
+from GraphEmbd.model import GraphEmbd
+from GraphEmbd.utils import NodeLabel_to_communities, community_to_NodeLabel
 import networkx as nx
-from utils import NodeLabel_to_communities, community_to_NodeLabel
 import pandas as pd
 import numpy as np
 import random
@@ -10,17 +10,17 @@ import time
 from math import ceil
 from tqdm import tqdm
 
-prod_result = pd.read_csv('SampleGraph/ind_CoreHH.csv')
+prod_result = pd.read_csv('Data/ind_CoreHH.csv')
 prod_result.head()
 
-edges = pd.read_csv('SampleGraph/edge_list.csv')
+edges = pd.read_csv('Data/edge_list.csv')
 edges.columns = ['source', 'target', 'weight', 'hhcluster_id']
 edges.head()
 
-HHC_size = pd.read_csv('SampleGraph/HH_size.csv')
+HHC_size = pd.read_csv('Data/HH_size.csv')
 random.seed(35)
 # HHC_id_set = random.sample(list(HHC_size[HHC_size.h_size>20].hhcluster_id), 100)
-HHC_id_set = random.sample(list(HHC_size.hhcluster_id), 10000)
+HHC_id_set = random.sample(list(HHC_size.hhcluster_id), 90000)
 
 def embd_clust(HHC_id):
     edges_sub = edges[edges.hhcluster_id==HHC_id]
