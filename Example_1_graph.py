@@ -1,16 +1,16 @@
-from model import GraphEmbd
-from utils import NodeLabel_to_communities, community_to_NodeLabel
+from GraphEmbd.model import GraphEmbd
+from GraphEmbd.utils import NodeLabel_to_communities, community_to_NodeLabel
 import matplotlib.pyplot as plt
 import networkx as nx
 import pandas as pd
 import numpy as np
 from math import ceil
 
-edges = pd.read_csv('SampleGraph/edge_list.csv')
+edges = pd.read_csv('Data/edge_list.csv')
 edges.columns = ['source', 'target', 'weight', 'hhcluster_id']
 edges.head()
 
-prod = pd.read_csv('SampleGraph/ind_CoreHH.csv')
+prod = pd.read_csv('Data/ind_CoreHH.csv')
 prod.head()
 
 HHC_size = pd.DataFrame(edges.hhcluster_id.value_counts())
