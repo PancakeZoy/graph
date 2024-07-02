@@ -4,12 +4,13 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import pandas as pd
 import numpy as np
+from math import ceil
 
-edges = pd.read_csv('SampleGraph_new/edge_list.csv')
+edges = pd.read_csv('SampleGraph/edge_list.csv')
 edges.columns = ['source', 'target', 'weight', 'hhcluster_id']
 edges.head()
 
-prod = pd.read_csv('SampleGraph_new/ind_CoreHH.csv')
+prod = pd.read_csv('SampleGraph/ind_CoreHH.csv')
 prod.head()
 
 HHC_size = pd.DataFrame(edges.hhcluster_id.value_counts())
@@ -18,11 +19,6 @@ HHC_id = HHC_size.index[0]
 edges_subset = edges[edges.hhcluster_id==HHC_id]
 prod_subset = prod[prod.hhcluster_id == HHC_id]
 
-# Just in case if there are multiple connected components in the graph. They are supposed to be presented here tho.
-# concom = sorted(list(nx.connected_components(G)), key=len, reverse=True)
-# concom_size = np.array([len(cc) for cc in concom])
-# sub_G = G.subgraph(concom[0])
-
 G = nx.from_pandas_edgelist(edges_subset, 'source', 'target', edge_attr='weight')
 model = GraphEmbd(G)
 
@@ -30,6 +26,7 @@ model = GraphEmbd(G)
 node_comm = NodeLabel_to_communities(list(prod_subset.core_hh_id), list(prod_subset.ind_id))
 model.node_label['Production'] = community_to_NodeLabel(list(model.G.nodes), node_comm)
 model.modularity('Production')
+model.triangles('Production')
 model.draw_graph(method='Production', with_labels=False, node_size=30)
 
 # Fit the node2vec model
@@ -52,17 +49,17 @@ model.HDBSCAN(reduction='node2vec')
 K_HDBSCAN = len(np.unique(model.node_label['HDBSCAN']))
 
 # Perform model selection to choose the number of clusters K
-grid_min = max(2, K_HDBSCAN-2)
-grid_max = min(K_HDBSCAN+2, int(model.n_nodes/2))
-model.hyper_tune(grid=range(grid_min, grid_max+1), method = 'KMeans', reduction='node2vec')
+grid_min = max(ceil(model.n_nodes/10), K_HDBSCAN-3)
+grid_max = min(K_HDBSCAN+3, ceil(model.n_nodes/3))+1
+if grid_max <= grid_min:
+    raise ValueError('Invalid searching window!')
+model.hyper_tune(grid=range(grid_min, grid_max), method = 'KMeans', reduction='node2vec')
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
 model.plot_trace(method='KMeans', score='modularity', ax=ax1, c='red')
-model.plot_trace(method='KMeans', score='silhouette', ax=ax2)
+model.plot_trace(method='KMeans', score='triangles', ax=ax2)
 plt.show()
 
 # Therefore we select the optimal K
-k_optim = model.grid['KMeans'][np.argmax(model.trace['KMeans']['modularity'])]
-model.kmeans(n_clusters=k_optim, reduction='node2vec')
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
 model.draw_graph(method='KMeans', with_labels=False, ax=ax1)
 model.plot_embd(method='KMeans', title='UMAP of node embedding (KMeans labels)', with_labels=False, ax=ax2)

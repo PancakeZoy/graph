@@ -8,10 +8,10 @@ import random
 from tqdm import tqdm
 from sklearn.metrics.cluster import adjusted_rand_score
 
-prod = pd.read_csv('SampleGraph_new/ind_CoreHH.csv')
+prod = pd.read_csv('SampleGraph/ind_CoreHH.csv')
 prod.head()
 
-edges = pd.read_csv('SampleGraph_new/edge_list.csv')
+edges = pd.read_csv('SampleGraph/edge_list.csv')
 edges.columns = ['source', 'target', 'weight', 'hhcluster_id']
 edges.head()
 

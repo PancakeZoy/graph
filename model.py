@@ -8,7 +8,6 @@ from sklearn.metrics import silhouette_score
 from sklearn.decomposition import PCA
 from utils import NodeLabel_to_communities
 import matplotlib.pyplot as plt
-# import seaborn as sns
 import distinctipy
 
 class GraphEmbd():
@@ -20,11 +19,9 @@ class GraphEmbd():
         self.n_nodes = len(self.nodes)
         self.node_label = {}
         self.node2vec_model = None
-        self.clust_model = None
         self.reduction = {}
         self.metric = {}
         self.trace = {}
-        self.n_trigs = sum(nx.triangles(graph).values())
         self.grid = {}
     
     def embd_init(self, 
@@ -227,9 +224,10 @@ class GraphEmbd():
         if reduction not in self.reduction.keys():
             raise ValueError(f"Must give a reduction name among {list(self.reduction.keys())}")
         pred_label = model.fit_predict(self.reduction[reduction])
-        self.clust_model = model
         self.node_label['KMeans'] = pred_label
         self.modularity('KMeans')
+        self.triangles('KMeans')
+        # self.silhouette('KMeans', reduction)
 
     def louvian(self, seed=123, **kwargs):
         """
@@ -256,6 +254,8 @@ class GraphEmbd():
         louv_label = np.array([node_to_cluster[node] for node in nodes_list]).astype(int)
         self.node_label['Louvian'] = louv_label
         self.modularity('Louvian')
+        self.triangles('Louvian')
+        # self.silhouette('Louvian', reduction='node2vec')
         
     def HDBSCAN(self,
                 reduction='PCA',
@@ -264,12 +264,15 @@ class GraphEmbd():
                 **kwargs):
         if reduction not in self.reduction.keys():
             raise ValueError(f"Must give a reduction name among {list(self.reduction.keys())}")
+        min_cluster_size = min(min_cluster_size, self.n_nodes)
         hdb = HDBSCAN(min_cluster_size=min_cluster_size,
                       max_cluster_size=max_cluster_size,
                       **kwargs)
         hdb.fit(self.reduction[reduction])
         self.node_label['HDBSCAN'] = hdb.labels_
         self.modularity('HDBSCAN')
+        self.triangles('HDBSCAN')
+        # self.silhouette('HDBSCAN', reduction)
         
     def hyper_tune(self, grid, method = 'KMeans', reduction = 'PCA'):
         """
@@ -290,15 +293,16 @@ class GraphEmbd():
             A dictionary containing the following keys for each method:
             - 'modularity': ndarray
                 Modularity scores for each value in the grid.
-            - 'silhouette': ndarray
-                Silhouette scores for each value in the grid.
+            - 'triangles': ndarray
+                Percentage of triangles remained for each value in the grid.
         
         Notes
         -----
         This method performs clustering using either KMeans or HDBSCAN over a range of parameters specified in the grid.
-        For each parameter value, it calculates the modularity and silhouette scores and stores these metrics in the `trace` attribute.
+        For each parameter value, it calculates the modularity and percentage of triangles remained, then stores these metrics in the `trace` attribute.
         """
-        mod = np.array([]); sil = np.array([]);
+        # Log the tuning history
+        mod = np.array([]); triag = np.array([]); label = np.empty((0, self.n_nodes), int)
         self.grid[method] = grid
         for p in grid:
             if method == 'KMeans':            
@@ -307,15 +311,88 @@ class GraphEmbd():
                 self.HDBSCAN(reduction=reduction, min_cluster_size=p)
             else:
                 raise ValueError("Invalid method. Please choose either 'KMeans' or 'HDBSCAN'.")
-            pred_label = self.node_label[method]
-            mod = np.append(mod, nx.community.modularity(self.G, NodeLabel_to_communities(pred_label, self.nodes)))
-            sil = np.append(sil, silhouette_score(self.reduction[reduction], pred_label))
-        trace_method = {'modularity': mod, 'silhouette': sil}
+            mod = np.append(mod, self.metric['modularity'][method])
+            triag = np.append(triag, self.metric['triangles'][method])
+            label = np.vstack([label, self.node_label[method]])
+        trace_method = {'modularity': mod, 'triangles': triag}
         self.trace[method] = trace_method
+        
+        # Apply the optimal result to the model
+        idx = np.argmax(mod)
+        self.node_label[method] = label[idx]
+        self.metric['modularity'][method] = mod[idx]
+        self.metric['triangles'][method] = triag[idx]
+        
+        
+    def silhouette(self, method, reduction, size_limit = True):
+        """
+        Calculate silhouette score of the clustering result by given method.
+    
+        Parameters
+        ----------
+        - method: str
+            The name of the clustering result used to calculate silhouette score
+        - reduction: str
+            The key in the reduction dictionary to calculate silhouette score
+    
+        Raises
+        ------
+        - ValueError: If the method is not found in self.node_label.
+    
+        Attributes
+        ----------
+        - self.metric['silhouette'][method]: float
+            The modularity score for the given method.
+        """
+        if method not in self.node_label.keys():
+            raise ValueError(f"Must give a method name among {list(self.node_label.keys())}")
+        pred_label = self.node_label[method]
+        sil_value = silhouette_score(self.reduction[reduction], pred_label)
+        
+        _, freq = np.unique(pred_label, return_counts=True)
+        max_size = max(freq)
+        score = -10**6 if size_limit and max_size > 10 else sil_value
+
+        if 'silhouette' not in self.metric:
+            self.metric['silhouette'] = {}
+        self.metric['silhouette'][method] = score
+        
+    def triangles(self, method, size_limit = True):
+        """
+        Calculate the percentage of triangles remained after clustering method.
+    
+        Parameters
+        ----------
+        - method: str
+            The name of the method used to detect communities.
+    
+        Raises
+        ------
+        - ValueError: If the method is not found in self.node_label.
+    
+        Attributes
+        ----------
+        - self.metric['triangles'][method]: float
+            The triangles score for the given method.
+        """
+        if method not in self.node_label.keys():
+            raise ValueError(f"Must give a method name among {list(self.node_label.keys())}")
+        pred_comm = NodeLabel_to_communities(self.node_label[method], self.nodes)
+        sum_subs = sum([sum(nx.triangles(self.G.subgraph(subG)).values())/3 for subG in pred_comm])
+        tot_G = sum(nx.triangles(self.G).values())/3
+        triag_rem = 1 if tot_G == 0 else sum_subs/tot_G 
+        
+        max_size = max([len(comm) for comm in pred_comm])
+        score = -10**6 if size_limit and max_size > 10 else triag_rem
+
+        if 'triangles' not in self.metric:
+            self.metric['triangles'] = {}
+        self.metric['triangles'][method] = score
+        
     
     def modularity(self, method, size_limit = True):
         """
-        Calculate the modularity of the communities detected by the given method.
+        Calculate the modularity of the communities detected by given method.
     
         Parameters
         ----------
@@ -337,7 +414,7 @@ class GraphEmbd():
         mod_value = nx.community.modularity(self.G, pred_comm)
         
         max_size = max([len(comm) for comm in pred_comm])
-        score = 1e-6 if size_limit and max_size > 10 else mod_value
+        score = -10**6 if size_limit and max_size > 10 else mod_value
 
         if 'modularity' not in self.metric:
             self.metric['modularity'] = {}
@@ -371,9 +448,11 @@ class GraphEmbd():
             if method not in self.node_label.keys():
                 raise ValueError(f"Must give a method name among {list(self.node_label.keys())}")
             labels = self.node_label[method]
-            unique_labels = np.unique(labels)
-            # label_to_color = {label: color for label, color in zip(unique_labels, sns.color_palette("hsv", len(unique_labels)))}
-            label_to_color = {label: color for label, color in zip(unique_labels, distinctipy.get_colors(len(unique_labels)))}
+            unique_labels, unique_indices = np.unique(labels, return_index=True)
+            unique_labels_order = labels[np.sort(unique_indices)]
+            mapping = {old: new for new, old in enumerate(unique_labels_order)}
+            labels = np.vectorize(mapping.get)(labels)
+            label_to_color = {label: color for label, color in zip(unique_labels, distinctipy.get_colors(len(unique_labels), rng=24))}
             node_color = [label_to_color[label] for label in labels]
         else:
             node_color = '#1f78b4'  # Default color if no method is provided
@@ -423,9 +502,11 @@ class GraphEmbd():
             if method not in self.node_label.keys():
                 raise ValueError(f"Must give a method name among {list(self.node_label.keys())}")
             labels = self.node_label[method]
-            unique_labels = np.unique(labels)
-            # label_to_color = {label: color for label, color in zip(unique_labels, sns.color_palette("hsv", len(unique_labels)))}
-            label_to_color = {label: color for label, color in zip(unique_labels, distinctipy.get_colors(len(unique_labels)))}
+            unique_labels, unique_indices = np.unique(labels, return_index=True)
+            unique_labels_order = labels[np.sort(unique_indices)]
+            mapping = {old: new for new, old in enumerate(unique_labels_order)}
+            labels = np.vectorize(mapping.get)(labels)
+            label_to_color = {label: color for label, color in zip(unique_labels, distinctipy.get_colors(len(unique_labels), rng=24))}
             colors = [label_to_color[label] for label in labels]
         else:
             colors = None
