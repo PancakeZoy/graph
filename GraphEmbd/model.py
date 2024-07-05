@@ -6,7 +6,7 @@ from sklearn.cluster import KMeans
 from sklearn.cluster import HDBSCAN
 from sklearn.metrics import silhouette_score
 from sklearn.decomposition import PCA
-from .utils import NodeLabel_to_communities
+from .utils import NodeLabel_to_communities, community_to_NodeLabel
 import matplotlib.pyplot as plt
 import distinctipy
 
@@ -223,8 +223,27 @@ class GraphEmbd():
                         **kwargs)
         if reduction not in self.reduction.keys():
             raise ValueError(f"Must give a reduction name among {list(self.reduction.keys())}")
-        pred_label = model.fit_predict(self.reduction[reduction])
-        self.node_label['KMeans'] = pred_label
+        kmeans_label = model.fit_predict(self.reduction[reduction])
+        
+        ###################### Break clusters with size > 10 #################################
+        group, counts = np.unique(kmeans_label, return_counts=True)
+        if any(counts>10):
+            kmeans_comm = NodeLabel_to_communities(kmeans_label, self.nodes)
+            to_refine = np.where([len(comm)>10 for comm in kmeans_comm])[0]
+            if len(to_refine) > 0:
+                to_keep = [comm for comm in kmeans_comm if len(comm)<=10]
+                for i in to_refine:
+                    sub_comm = nx.community.girvan_newman(self.G.subgraph(kmeans_comm[i]))
+                    for communities in sub_comm:
+                        communities_list = list(communities)
+                        if all(len(cluster) <= 10 for cluster in communities_list):
+                            break
+                    to_keep.extend(communities_list)
+                kmeans_comm = to_keep
+            kmeans_label = community_to_NodeLabel(self.nodes, kmeans_comm)
+        #######################################################################################
+        
+        self.node_label['KMeans'] = kmeans_label
         self.modularity('KMeans')
         self.triangles('KMeans')
         # self.silhouette('KMeans', reduction)
@@ -246,12 +265,22 @@ class GraphEmbd():
             Community labels for each node in the graph.
         """
         louv_comm = nx.community.louvain_communities(self.G, seed=seed)
-        nodes_list = list(self.G.nodes)
-        node_to_cluster = {}
-        for cluster_id, cluster in enumerate(louv_comm):
-            for node in cluster:
-                node_to_cluster[node] = cluster_id
-        louv_label = np.array([node_to_cluster[node] for node in nodes_list]).astype(int)
+        
+        ###################### Break clusters with size > 10 #################################
+        to_refine = np.where([len(comm)>10 for comm in louv_comm])[0]
+        if len(to_refine) > 0:
+            to_keep = [comm for comm in louv_comm if len(comm)<=10]
+            for i in to_refine:
+                sub_comm = nx.community.girvan_newman(self.G.subgraph(louv_comm[i]))
+                for communities in sub_comm:
+                    communities_list = list(communities)
+                    if all(len(cluster) <= 10 for cluster in communities_list):
+                        break
+                to_keep.extend(communities_list)
+            louv_comm = to_keep
+        #######################################################################################
+        
+        louv_label = community_to_NodeLabel(self.nodes, louv_comm)
         self.node_label['Louvian'] = louv_label
         self.modularity('Louvian')
         self.triangles('Louvian')
@@ -357,7 +386,7 @@ class GraphEmbd():
             self.metric['silhouette'] = {}
         self.metric['silhouette'][method] = score
         
-    def triangles(self, method, size_limit = True):
+    def triangles(self, method, size_limit = False):
         """
         Calculate the percentage of triangles remained after clustering method.
     
@@ -543,7 +572,10 @@ class GraphEmbd():
             ax.set_ylabel(ylabel)
         if title:
             ax.set_title(title)
-    
+
+        ax.set_xticks([])
+        ax.set_yticks([])
+
         # Save the figure if 'savefig' is provided
         if savefig and ax is None:
             plt.savefig(savefig)
@@ -578,6 +610,8 @@ class GraphEmbd():
         # Extract specific keys from kwargs
         xlabel = kwargs.pop('xlabel', 'Grid')
         ylabel = kwargs.pop('ylabel', score.capitalize())
+        y_min = kwargs.pop('y_min', None)
+        y_max = kwargs.pop('y_max', None)
         title = kwargs.pop('title', f'{score.capitalize()} Scores for Different K Values')
         savefig = kwargs.pop('savefig', None)
     
@@ -596,7 +630,14 @@ class GraphEmbd():
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
         ax.set_title(title)
-        ax.legend()
+        
+        ax.set_xticks(self.grid[method])
+        
+        # Set y-axis limits if provided
+        if y_min is not None or y_max is not None:
+            ax.set_ylim(y_min, y_max)
+        
+        # ax.legend()
     
         # Save the figure if 'savefig' is provided
         if savefig and ax is None:

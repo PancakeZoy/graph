@@ -16,6 +16,7 @@ prod.head()
 HHC_size = pd.DataFrame(edges.hhcluster_id.value_counts())
 HHC_id = HHC_size.index[0]
 
+# HHC_id = 310100000218403082
 edges_subset = edges[edges.hhcluster_id==HHC_id]
 prod_subset = prod[prod.hhcluster_id == HHC_id]
 
@@ -27,7 +28,9 @@ node_comm = NodeLabel_to_communities(list(prod_subset.core_hh_id), list(prod_sub
 model.node_label['Production'] = community_to_NodeLabel(list(model.G.nodes), node_comm)
 model.modularity('Production')
 model.triangles('Production')
-model.draw_graph(method='Production', with_labels=False, node_size=30)
+fig, ax = plt.subplots(1, 1, figsize=(6, 6), dpi=400)
+model.draw_graph(method='Production', with_labels=False, node_size=30, width=0.5, ax=ax)
+plt.show()
 
 # Fit the node2vec model
 model.embd_init(seed=4, dimensions=20, walk_length = 40, quiet=True)
@@ -35,12 +38,14 @@ model.fit()
 
 # Run PCA on the node2vec embeddings
 model.pca()
-model.plot_embd(reduction='PCA', title='PCA plot of node embedding', with_labels=False, method='Production')
+fig, ax = plt.subplots(1, 1, figsize=(6, 6), dpi=400)
+model.plot_embd(reduction='PCA', title='PCA plot of node embeddings', with_labels=False, method='Production', ax=ax)
+plt.show()
 
 #Perform UMAP on the node2vec embeddings, for visualization and K-Means clustering
 model.umap(n_jobs=1, reduction='PCA')
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
-model.draw_graph(method='Production', with_labels=False, ax=ax1)
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6), dpi=400)
+model.draw_graph(method='Production', with_labels=False, node_size=30, width=0.5, ax=ax1)
 model.plot_embd(method='Production', title='UMAP of node embedding (Production labels)', with_labels=False, ax=ax2)
 plt.show()
 
@@ -54,30 +59,30 @@ grid_max = min(K_HDBSCAN+3, ceil(model.n_nodes/3))+1
 if grid_max <= grid_min:
     raise ValueError('Invalid searching window!')
 model.hyper_tune(grid=range(grid_min, grid_max), method = 'KMeans', reduction='node2vec')
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
-model.plot_trace(method='KMeans', score='modularity', ax=ax1, c='red')
-model.plot_trace(method='KMeans', score='triangles', ax=ax2)
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6), dpi=400)
+model.plot_trace(method='KMeans', score='modularity', ax=ax1, c='red', xlabel='Number of clusters')
+model.plot_trace(method='KMeans', score='triangles', ax=ax2, xlabel='Number of clusters')
 plt.show()
 
 # Therefore we select the optimal K
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
-model.draw_graph(method='KMeans', with_labels=False, ax=ax1)
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6), dpi=400)
+model.draw_graph(method='KMeans', with_labels=False, node_size=30, width=0.5, ax=ax1)
 model.plot_embd(method='KMeans', title='UMAP of node embedding (KMeans labels)', with_labels=False, ax=ax2)
 plt.show()
 
 # Now we run Louvian's method with default settings on the graph data, and plot the result out colored by the corresponding cluster labels
 model.louvian(seed=3)
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
-model.draw_graph(method='Louvian', with_labels=False, ax=ax1)
+model.draw_graph(method='Louvian', with_labels=False, node_size=30, width=0.5, ax=ax1)
 model.plot_embd(method='Louvian', title='UMAP of node embedding (Louvian labels)', with_labels=False, ax=ax2)
 plt.show()
 
 # Let's compare them all together, will modurality calculated.
 fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 6))
-model.draw_graph(method='KMeans', with_labels=False, 
+model.draw_graph(method='KMeans', with_labels=False, node_size=30, width=0.5, 
                  title=f"Karate Graph with KMeans labels (Modularity {round(model.metric['modularity']['KMeans'],4)})", ax=ax1)
-model.draw_graph(method='Production', with_labels=False, 
+model.draw_graph(method='Production', with_labels=False, node_size=30, width=0.5, 
                  title=f"Karate Graph with Production labels (Modularity {round(model.metric['modularity']['Production'],4)})", ax=ax2)
-model.draw_graph(method='Louvian', with_labels=False, 
+model.draw_graph(method='Louvian', with_labels=False, node_size=30, width=0.5, 
                  title=f"Karate Graph with Louvian labels (Modularity {round(model.metric['modularity']['Louvian'],4)})", ax=ax3)
 plt.show()

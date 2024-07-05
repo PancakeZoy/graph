@@ -52,4 +52,6 @@ def embd_clust(HHC_id, edges_sub, prod_sub):
     
     # Add run time to model metric
     model.metric['RunTime'] = {'KMeans': KM_time, 'Louvian': louvian_time}
-    return model.metric
+    
+    result_return = {'metric': model.metric, 'node_label': model.node_label}
+    return result_return
