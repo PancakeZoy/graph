@@ -2,6 +2,7 @@ import pandas as pd
 import random
 import time
 import multiprocessing
+import pickle
 from worker import embd_clust
 
 def main():
@@ -30,6 +31,9 @@ if __name__ == "__main__":
 end = time.time()
 print(end - start)
 
+####################################################################################
+####################################################################################
+####################################################################################
 # start = time.time()
 # prod_result = pd.read_csv('../Data/ind_CoreHH.csv')
 # edges = pd.read_csv('../Data/edge_list.csv')
@@ -49,3 +53,6 @@ print(end - start)
 #     result[HHC_id] = embd_clust(HHC_id, edges_sub, prod_sub)
 # end = time.time()
 # print(end - start)
+
+# with open('result.pkl', 'wb') as f:
+#     pickle.dump(result, f)
