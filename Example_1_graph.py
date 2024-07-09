@@ -13,7 +13,7 @@ edges.head()
 prod = pd.read_csv('Data/ind_CoreHH.csv')
 prod.head()
 
-HHC_size = pd.DataFrame(edges.hhcluster_id.value_counts())
+HHC_size = pd.read_csv('Data/HH_size.csv', index_col = 0)
 HHC_id = HHC_size.index[0]
 
 # HHC_id = 310100000218403082
