@@ -22,6 +22,7 @@ def embd_clust(HHC_id, edges_sub, prod_sub):
         model.node_label['KMeans'] = np.zeros(len(node_list), dtype=int)
         model.modularity('KMeans')
         model.triangles('KMeans')
+        model.silhouette('KMeans', 'node2vec')
     else:
         # Fit the node2vec model
         model.embd_init(seed=4, dimensions=20, walk_length = 40, quiet=True)
@@ -49,6 +50,7 @@ def embd_clust(HHC_id, edges_sub, prod_sub):
     model.node_label['Prod'] = community_to_NodeLabel(node_list, node_comm)
     model.modularity('Prod')
     model.triangles('Prod')
+    model.silhouette('Prod', 'node2vec')
     
     # Add run time to model metric
     model.metric['RunTime'] = {'KMeans': KM_time, 'Louvian': louvian_time}

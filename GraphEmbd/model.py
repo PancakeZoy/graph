@@ -246,7 +246,7 @@ class GraphEmbd():
         self.node_label['KMeans'] = kmeans_label
         self.modularity('KMeans')
         self.triangles('KMeans')
-        # self.silhouette('KMeans', reduction)
+        self.silhouette('KMeans', reduction)
 
     def louvian(self, seed=123, **kwargs):
         """
@@ -284,7 +284,7 @@ class GraphEmbd():
         self.node_label['Louvian'] = louv_label
         self.modularity('Louvian')
         self.triangles('Louvian')
-        # self.silhouette('Louvian', reduction='node2vec')
+        self.silhouette('Louvian', reduction='node2vec')
         
     def HDBSCAN(self,
                 reduction='PCA',
@@ -301,7 +301,7 @@ class GraphEmbd():
         self.node_label['HDBSCAN'] = hdb.labels_
         self.modularity('HDBSCAN')
         self.triangles('HDBSCAN')
-        # self.silhouette('HDBSCAN', reduction)
+        self.silhouette('HDBSCAN', reduction)
         
     def hyper_tune(self, grid, method = 'KMeans', reduction = 'PCA'):
         """
@@ -376,7 +376,10 @@ class GraphEmbd():
         if method not in self.node_label.keys():
             raise ValueError(f"Must give a method name among {list(self.node_label.keys())}")
         pred_label = self.node_label[method]
-        sil_value = silhouette_score(self.reduction[reduction], pred_label)
+        if (reduction in self.reduction.keys()) and (len(np.unique(pred_label)) > 1):
+            sil_value = silhouette_score(self.reduction[reduction], pred_label)
+        else:
+            sil_value = np.nan
         
         _, freq = np.unique(pred_label, return_counts=True)
         max_size = max(freq)
